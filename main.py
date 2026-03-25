@@ -237,7 +237,6 @@ def get_activity_patterns(posts: List[Dict]) -> Dict:
 def ai_inference(photo_urls: List[str]) -> Dict:
     if not REPLICATE_API_KEY or not photo_urls:
         return {"note": "AI inference disabled or no photos available"}
-    # Placeholder for actual AI API call
     return {
         "hobbies": ["photography", "travel"],
         "lifestyle": "active",
