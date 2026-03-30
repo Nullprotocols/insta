@@ -1,7 +1,51 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
 .venv/
-.DS_Store
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+
+# Instagrapi session files (critical to exclude)
 session_*.json
+*.session
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+
+# Local development
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python packaging
+dist/
+build/
+*.egg-info/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Installed dependencies (optional – if you generate)
+requirements.txt
