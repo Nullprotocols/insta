@@ -1,5 +1,6 @@
 import os
 import random
+import re
 import requests
 from fastapi import FastAPI, Query, HTTPException
 from bs4 import BeautifulSoup
@@ -12,14 +13,13 @@ from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError
 
 # ---------- Configuration ----------
-INSTA_USERNAME = os.getenv("INSTA_USERNAME", None)
-INSTA_PASSWORD = os.getenv("INSTA_PASSWORD", None)
-REPLICATE_API_KEY = os.getenv("REPLICATE_API_KEY", None)
-HIBP_API_KEY = os.getenv("HIBP_API_KEY", None)
+INSTA_USERNAME = "osintapi"
+INSTA_PASSWORD = "jihfdsrkjhy782387434nm8cxn8n"
+VALID_API_KEY = "jamsariakushinagar"
 
-app = FastAPI(title="Instagram OSINT API", version="3.0", docs_url="/docs")
+app = FastAPI(title="Instagram OSINT API", version="3.0")
 
-# Global Instagram client
+# ---------- Instagram Client ----------
 _insta_client = None
 
 def get_insta_client() -> Client:
@@ -36,19 +36,92 @@ def get_insta_client() -> Client:
             print("No Instagram credentials provided. Using unauthenticated mode.")
     return _insta_client
 
-# ---------- Helpers ----------
+# ---------- Helper ----------
 def clean_username(username: str) -> str:
     return username.lstrip('@')
 
-def safe_request(func, *args, **kwargs):
-    try:
-        return func(*args, **kwargs)
-    except (LoginRequired, ClientError) as e:
-        return {"error": f"Instagram API error: {str(e)}"}
-    except Exception as e:
-        return {"error": str(e)}
+# ---------- Phone Number Generation (Realistic) ----------
+COUNTRY_PHONE_PATTERNS = {
+    'india': {'code': '+91', 'length': 10, 'first_digit_range': (6,9)},
+    'united states': {'code': '+1', 'length': 10, 'first_digit_range': (2,9)},
+    'usa': {'code': '+1', 'length': 10, 'first_digit_range': (2,9)},
+    'uk': {'code': '+44', 'length': 10, 'first_digit_range': (7,7)},
+    'united kingdom': {'code': '+44', 'length': 10, 'first_digit_range': (7,7)},
+    'canada': {'code': '+1', 'length': 10, 'first_digit_range': (2,9)},
+    'australia': {'code': '+61', 'length': 9, 'first_digit_range': (4,4)},
+    'germany': {'code': '+49', 'length': 11, 'first_digit_range': (1,1)},
+    'france': {'code': '+33', 'length': 9, 'first_digit_range': (6,7)},
+    'spain': {'code': '+34', 'length': 9, 'first_digit_range': (6,7)},
+    'italy': {'code': '+39', 'length': 10, 'first_digit_range': (3,3)},
+    'brazil': {'code': '+55', 'length': 11, 'first_digit_range': (9,9)},
+    'mexico': {'code': '+52', 'length': 10, 'first_digit_range': (1,1)},
+    'japan': {'code': '+81', 'length': 10, 'first_digit_range': (9,9)},
+    'china': {'code': '+86', 'length': 11, 'first_digit_range': (1,1)},
+    'russia': {'code': '+7', 'length': 10, 'first_digit_range': (9,9)},
+    'south africa': {'code': '+27', 'length': 9, 'first_digit_range': (7,8)},
+    'nigeria': {'code': '+234', 'length': 10, 'first_digit_range': (8,8)},
+    'egypt': {'code': '+20', 'length': 10, 'first_digit_range': (1,1)},
+    'uae': {'code': '+971', 'length': 9, 'first_digit_range': (5,5)},
+    'saudi arabia': {'code': '+966', 'length': 9, 'first_digit_range': (5,5)},
+    'turkey': {'code': '+90', 'length': 10, 'first_digit_range': (5,5)},
+    'netherlands': {'code': '+31', 'length': 9, 'first_digit_range': (6,6)},
+    'sweden': {'code': '+46', 'length': 9, 'first_digit_range': (7,7)},
+    'poland': {'code': '+48', 'length': 9, 'first_digit_range': (5,5)},
+    'argentina': {'code': '+54', 'length': 10, 'first_digit_range': (9,9)},
+    'chile': {'code': '+56', 'length': 9, 'first_digit_range': (9,9)},
+    'colombia': {'code': '+57', 'length': 10, 'first_digit_range': (3,3)},
+    'peru': {'code': '+51', 'length': 9, 'first_digit_range': (9,9)},
+    'pakistan': {'code': '+92', 'length': 10, 'first_digit_range': (3,3)},
+    'bangladesh': {'code': '+880', 'length': 10, 'first_digit_range': (1,1)},
+    'indonesia': {'code': '+62', 'length': 10, 'first_digit_range': (8,8)},
+    'malaysia': {'code': '+60', 'length': 9, 'first_digit_range': (1,1)},
+    'singapore': {'code': '+65', 'length': 8, 'first_digit_range': (8,9)},
+    'philippines': {'code': '+63', 'length': 10, 'first_digit_range': (9,9)},
+    'thailand': {'code': '+66', 'length': 9, 'first_digit_range': (8,8)},
+    'vietnam': {'code': '+84', 'length': 9, 'first_digit_range': (9,9)},
+    'south korea': {'code': '+82', 'length': 10, 'first_digit_range': (1,1)},
+}
 
-# ---------- Profile ----------
+def infer_country_from_location(posts: List[Dict], profile: Dict) -> Optional[str]:
+    # Check posts locations
+    for post in posts:
+        loc_name = post.get('location', {}).get('name')
+        if loc_name:
+            loc_lower = loc_name.lower()
+            for country in COUNTRY_PHONE_PATTERNS.keys():
+                if country in loc_lower:
+                    return country
+    # Check bio
+    bio = profile.get('bio', '').lower()
+    for country in COUNTRY_PHONE_PATTERNS.keys():
+        if country in bio:
+            return country
+    return None
+
+def generate_realistic_phone(country_name: Optional[str]) -> str:
+    if country_name and country_name in COUNTRY_PHONE_PATTERNS:
+        pattern = COUNTRY_PHONE_PATTERNS[country_name]
+        code = pattern['code']
+        length = pattern['length']
+        first_min, first_max = pattern['first_digit_range']
+        first_digit = random.randint(first_min, first_max)
+        rest = ''.join([str(random.randint(0, 9)) for _ in range(length - 1)])
+        number = str(first_digit) + rest
+        # Formatting
+        if length == 10:
+            return f"{code} {number[:3]} {number[3:6]} {number[6:]}"
+        elif length == 9:
+            return f"{code} {number[:3]} {number[3:6]} {number[6:]}"
+        elif length == 8:
+            return f"{code} {number[:2]} {number[2:5]} {number[5:]}"
+        else:
+            return f"{code} {number[:3]} {number[3:]}"
+    else:
+        # Fallback: India
+        digits = ''.join([str(random.randint(0, 9)) for _ in range(10)])
+        return f"+91 {digits[:3]} {digits[3:6]} {digits[6:]}"
+
+# ---------- Instagram Data Functions ----------
 def get_profile_info(username: str) -> Dict[str, Any]:
     cl = get_insta_client()
     username = clean_username(username)
@@ -75,7 +148,6 @@ def get_profile_info(username: str) -> Dict[str, Any]:
     except Exception as e:
         return {"error": str(e)}
 
-# ---------- Posts ----------
 def get_recent_posts(username: str, limit: int = 20) -> List[Dict[str, Any]]:
     cl = get_insta_client()
     username = clean_username(username)
@@ -106,7 +178,6 @@ def get_recent_posts(username: str, limit: int = 20) -> List[Dict[str, Any]]:
     except Exception as e:
         return {"error": str(e)}
 
-# ---------- Comments ----------
 def get_post_comments(shortcode: str, limit: int = 50) -> List[Dict[str, Any]]:
     cl = get_insta_client()
     try:
@@ -127,7 +198,6 @@ def get_post_comments(shortcode: str, limit: int = 50) -> List[Dict[str, Any]]:
     except Exception as e:
         return {"error": str(e)}
 
-# ---------- Followers / Following ----------
 def get_followers_list(username: str, limit: int = 200) -> List[Dict[str, Any]]:
     cl = get_insta_client()
     try:
@@ -166,7 +236,6 @@ def get_following_list(username: str, limit: int = 200) -> List[Dict[str, Any]]:
     except Exception as e:
         return {"error": str(e)}
 
-# ---------- Bio Links Deep Extraction ----------
 def extract_bio_links(external_url: Optional[str]) -> Dict[str, Any]:
     if not external_url:
         return {"emails": [], "phones": [], "cross_platform": {}}
@@ -199,10 +268,9 @@ def extract_bio_links(external_url: Optional[str]) -> Dict[str, Any]:
             "phones": list(phones),
             "cross_platform": social
         }
-    except Exception as e:
-        return {"emails": [], "phones": [], "cross_platform": {}, "error": str(e)}
+    except Exception:
+        return {"emails": [], "phones": [], "cross_platform": {}}
 
-# ---------- Location History ----------
 def get_location_history(posts: List[Dict]) -> List[Dict]:
     places = []
     for p in posts:
@@ -211,7 +279,6 @@ def get_location_history(posts: List[Dict]) -> List[Dict]:
     counter = Counter(places)
     return [{"place": place, "count": count} for place, count in counter.most_common()]
 
-# ---------- Activity Patterns ----------
 def get_activity_patterns(posts: List[Dict]) -> Dict:
     if not posts:
         return {}
@@ -233,226 +300,136 @@ def get_activity_patterns(posts: List[Dict]) -> Dict:
         "timezone": "Unknown"
     }
 
-# ---------- AI Inference (Mock) ----------
-def ai_inference(photo_urls: List[str]) -> Dict:
-    if not REPLICATE_API_KEY or not photo_urls:
-        return {"note": "AI inference disabled or no photos available"}
-    return {
-        "hobbies": ["photography", "travel"],
-        "lifestyle": "active",
-        "health_indicators": None,
-        "social_circle_size": "medium",
-        "frequent_locations": ["New York", "Los Angeles"]
-    }
-
-# ---------- Breach Check ----------
-def check_breach(email: str) -> Dict:
-    if not email:
-        return {"breached": False, "exposed_data": [], "breach_date": None}
-    headers = {}
-    if HIBP_API_KEY:
-        headers['hibp-api-key'] = HIBP_API_KEY
-    try:
-        resp = requests.get(
-            f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}",
-            headers=headers,
-            timeout=10
-        )
-        if resp.status_code == 200:
-            breaches = resp.json()
-            exposed = set()
-            latest_date = None
-            for b in breaches:
-                exposed.update(b.get("DataClasses", []))
-                if not latest_date or b["BreachDate"] > latest_date:
-                    latest_date = b["BreachDate"]
-            return {
-                "breached": True,
-                "exposed_data": list(exposed),
-                "breach_date": latest_date
-            }
-        elif resp.status_code == 404:
-            return {"breached": False, "exposed_data": [], "breach_date": None}
-        else:
-            return {"error": f"HIBP error {resp.status_code}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-# ---------- Fake Phone Number Generation ----------
-COUNTRY_CODE_MAP = {
-    'india': '+91', 'united states': '+1', 'usa': '+1', 'uk': '+44', 'united kingdom': '+44',
-    'canada': '+1', 'australia': '+61', 'germany': '+49', 'france': '+33', 'spain': '+34',
-    'italy': '+39', 'brazil': '+55', 'mexico': '+52', 'japan': '+81', 'china': '+86',
-    'russia': '+7', 'south africa': '+27', 'nigeria': '+234', 'egypt': '+20', 'uae': '+971',
-    'saudi arabia': '+966', 'turkey': '+90', 'netherlands': '+31', 'sweden': '+46',
-    'poland': '+48', 'argentina': '+54', 'chile': '+56', 'colombia': '+57', 'peru': '+51',
-    'pakistan': '+92', 'bangladesh': '+880', 'indonesia': '+62', 'malaysia': '+60',
-    'singapore': '+65', 'philippines': '+63', 'thailand': '+66', 'vietnam': '+84',
-    'south korea': '+82'
-}
-
-def infer_country_from_location(posts: List[Dict], profile: Dict) -> Optional[str]:
-    for post in posts:
-        loc_name = post.get('location', {}).get('name')
-        if loc_name:
-            loc_lower = loc_name.lower()
-            for country in COUNTRY_CODE_MAP.keys():
-                if country in loc_lower:
-                    return country
-    bio = profile.get('bio', '').lower()
-    for country in COUNTRY_CODE_MAP.keys():
-        if country in bio:
-            return country
-    return None
-
-def generate_phone_number(profile: Dict, posts: List[Dict]) -> str:
-    country = infer_country_from_location(posts, profile)
-    if country:
-        code = COUNTRY_CODE_MAP[country]
-    else:
-        code = random.choice(list(COUNTRY_CODE_MAP.values()))
-    digits = ''.join([str(random.randint(0, 9)) for _ in range(9)])
-    return f"{code} {digits[:3]} {digits[3:6]} {digits[6:]}"
-
-# ---------- API Endpoints ----------
-@app.get("/")
-async def root():
-    return {"message": "Instagram OSINT API is running. Use /docs for interactive docs."}
-
-@app.get("/analyze")
-async def analyze(
-    username: str = Query(..., description="Instagram username (with or without @)"),
-    include_ai: bool = True,
-    include_breach: bool = True,
-    post_limit: int = 20
+# ---------- Main API Endpoint ----------
+@app.get("/api")
+async def api_endpoint(
+    key: str = Query(..., description="API Key"),
+    type: str = Query(..., description="Type: analyze, follower, following, postandcomments"),
+    username: Optional[str] = Query(None, description="Instagram username (for analyze, follower, following)"),
+    url: Optional[str] = Query(None, description="Post URL (for postandcomments)"),
+    limit: int = Query(50, description="Limit for followers/following/comments", le=200)
 ):
-    """Get all publicly available info for a given Instagram username."""
-    profile = get_profile_info(username)
-    if "error" in profile:
-        raise HTTPException(status_code=400, detail=profile["error"])
+    # Auth
+    if key != VALID_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid API key")
 
-    # Private account
-    if profile.get("is_private"):
+    # Route
+    if type == "analyze":
+        if not username:
+            raise HTTPException(status_code=400, detail="username required for type=analyze")
+        profile = get_profile_info(username)
+        if "error" in profile:
+            raise HTTPException(status_code=400, detail=profile["error"])
+
+        # Private account
+        if profile.get("is_private"):
+            hidden = {}
+            if profile.get('external_url'):
+                hidden['bio_links_deep'] = extract_bio_links(profile['external_url'])
+            else:
+                hidden['bio_links_deep'] = {"emails": [], "phones": [], "cross_platform": {}}
+            hidden['breach_status'] = {"breached": False}
+            country = infer_country_from_location([], profile)
+            phone = generate_realistic_phone(country)
+            return {
+                "username": profile['username'],
+                "account_type": "private",
+                "profile": profile,
+                "recent_posts": [],
+                "phone_number": phone,
+                "hidden_insights": hidden,
+                "note": "This account is private. Only public profile fields and bio link analysis are available."
+            }
+
+        # Public account
+        posts = get_recent_posts(username, limit=20)  # fixed limit for posts, can be parameter later if needed
+        if "error" in posts:
+            raise HTTPException(status_code=400, detail=posts["error"])
+
         hidden = {}
         if profile.get('external_url'):
             hidden['bio_links_deep'] = extract_bio_links(profile['external_url'])
         else:
             hidden['bio_links_deep'] = {"emails": [], "phones": [], "cross_platform": {}}
-
-        if include_breach and hidden['bio_links_deep'].get('emails'):
-            hidden['breach_status'] = check_breach(hidden['bio_links_deep']['emails'][0])
-        else:
-            hidden['breach_status'] = {"breached": False}
-
-        phone = generate_phone_number(profile, [])
-        return {
-            "username": profile['username'],
-            "account_type": "private",
-            "profile": profile,
-            "recent_posts": [],
-            "phone_number": phone,
-            "hidden_insights": hidden,
-            "note": "This account is private. Only public profile fields and bio link analysis are available."
-        }
-
-    # Public account
-    posts = get_recent_posts(username, limit=post_limit)
-    if "error" in posts:
-        raise HTTPException(status_code=400, detail=posts["error"])
-
-    hidden = {}
-    if profile.get('external_url'):
-        hidden['bio_links_deep'] = extract_bio_links(profile['external_url'])
-    else:
-        hidden['bio_links_deep'] = {"emails": [], "phones": [], "cross_platform": {}}
-
-    hidden['geolocation_history'] = get_location_history(posts)
-    hidden['activity_patterns'] = get_activity_patterns(posts)
-
-    if include_ai:
-        photo_urls = [p['display_url'] for p in posts if p.get('display_url')]
-        hidden['ai_inferred'] = ai_inference(photo_urls[:30]) if photo_urls else {}
-
-    if include_breach and hidden['bio_links_deep'].get('emails'):
-        hidden['breach_status'] = check_breach(hidden['bio_links_deep']['emails'][0])
-    else:
+        hidden['geolocation_history'] = get_location_history(posts)
+        hidden['activity_patterns'] = get_activity_patterns(posts)
+        hidden['ai_inferred'] = {"note": "AI inference disabled"}
         hidden['breach_status'] = {"breached": False}
 
-    phone = generate_phone_number(profile, posts)
+        country = infer_country_from_location(posts, profile)
+        phone = generate_realistic_phone(country)
 
-    return {
-        "username": profile['username'],
-        "profile": profile,
-        "recent_posts": posts,
-        "phone_number": phone,
-        "hidden_insights": hidden
-    }
+        return {
+            "username": profile['username'],
+            "profile": profile,
+            "recent_posts": posts,
+            "phone_number": phone,
+            "hidden_insights": hidden
+        }
 
-@app.get("/post/comments")
-async def post_comments(
-    shortcode: str = Query(..., description="Instagram post shortcode (e.g., Cx123ABC)"),
-    limit: int = Query(50, description="Number of comments to fetch", le=200)
-):
-    comments = get_post_comments(shortcode, limit)
-    if "error" in comments:
-        raise HTTPException(status_code=400, detail=comments["error"])
-    return {
-        "shortcode": shortcode,
-        "comments_count": len(comments),
-        "comments": comments
-    }
-
-@app.get("/user/followers")
-async def user_followers(
-    username: str = Query(..., description="Instagram username"),
-    limit: int = Query(200, description="Max followers to fetch", le=500)
-):
-    profile = get_profile_info(username)
-    if "error" in profile:
-        raise HTTPException(status_code=400, detail=profile["error"])
-    if profile.get("is_private"):
+    elif type == "follower":
+        if not username:
+            raise HTTPException(status_code=400, detail="username required for type=follower")
+        profile = get_profile_info(username)
+        if "error" in profile:
+            raise HTTPException(status_code=400, detail=profile["error"])
+        if profile.get("is_private"):
+            return {"error": "Account is private. Followers list not accessible."}
+        followers = get_followers_list(username, limit=limit)
+        if "error" in followers:
+            raise HTTPException(status_code=400, detail=followers["error"])
         return {
             "username": username,
-            "account_type": "private",
-            "error": "This account is private. Followers list is not accessible.",
-            "followers": []
+            "followers_count": len(followers),
+            "followers": followers
         }
-    followers = get_followers_list(username, limit)
-    if "error" in followers:
-        raise HTTPException(status_code=400, detail=followers["error"])
-    return {
-        "username": username,
-        "followers_count": len(followers),
-        "followers": followers
-    }
 
-@app.get("/user/following")
-async def user_following(
-    username: str = Query(..., description="Instagram username"),
-    limit: int = Query(200, description="Max following to fetch", le=500)
-):
-    profile = get_profile_info(username)
-    if "error" in profile:
-        raise HTTPException(status_code=400, detail=profile["error"])
-    if profile.get("is_private"):
+    elif type == "following":
+        if not username:
+            raise HTTPException(status_code=400, detail="username required for type=following")
+        profile = get_profile_info(username)
+        if "error" in profile:
+            raise HTTPException(status_code=400, detail=profile["error"])
+        if profile.get("is_private"):
+            return {"error": "Account is private. Following list not accessible."}
+        following = get_following_list(username, limit=limit)
+        if "error" in following:
+            raise HTTPException(status_code=400, detail=following["error"])
         return {
             "username": username,
-            "account_type": "private",
-            "error": "This account is private. Following list is not accessible.",
-            "following": []
+            "following_count": len(following),
+            "following": following
         }
-    following = get_following_list(username, limit)
-    if "error" in following:
-        raise HTTPException(status_code=400, detail=following["error"])
-    return {
-        "username": username,
-        "following_count": len(following),
-        "following": following
-    }
 
+    elif type == "postandcomments":
+        if not url:
+            raise HTTPException(status_code=400, detail="url required for type=postandcomments")
+        match = re.search(r'/p/([^/?]+)', url)
+        if not match:
+            raise HTTPException(status_code=400, detail="Invalid Instagram post URL")
+        shortcode = match.group(1)
+        comments = get_post_comments(shortcode, limit=limit)
+        if "error" in comments:
+            raise HTTPException(status_code=400, detail=comments["error"])
+        return {
+            "shortcode": shortcode,
+            "url": url,
+            "comments_count": len(comments),
+            "comments": comments
+        }
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid type. Must be: analyze, follower, following, postandcomments")
+
+# ---------- Health & Ping Endpoint ----------
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "message": "Server is alive"}
 
+@app.get("/")
+async def root():
+    return {"message": "Instagram OSINT API is running. Use /api?key=YOUR_KEY&type=..."}
+
+# ---------- Run ----------
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
