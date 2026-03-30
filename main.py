@@ -13,8 +13,8 @@ from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, ClientError
 
 # ---------- Configuration ----------
-INSTA_USERNAME = "osintapi"
-INSTA_PASSWORD = "jihfdsrkjhy782387434nm8cxn8n"
+INSTA_USERNAME = "osint_lookup"
+INSTA_PASSWORD = "9648279552"
 VALID_API_KEY = "jamsariakushinagar"
 
 app = FastAPI(title="Instagram OSINT API", version="3.0")
